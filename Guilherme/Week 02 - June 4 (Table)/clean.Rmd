@@ -8,12 +8,12 @@ data = read.csv("SCBH1-2014.csv") #get the csv data
 data$st1 = NA #create new column for S(t - 1)
 data$st2 = NA #create new column for S(t - 2)
 
-for (i in 2:nrow(data)) 
+for (i in 2:nrow(data))
 {
   data$st1[i] = data$SOLR[i-1] #get the hour before solar irradiance
 }
 
-for (i in 3:nrow(data)) 
+for (i in 3:nrow(data))
 {
   data$st2[i] = data$SOLR[i-2] #get the two hour before solar irradiance
 }

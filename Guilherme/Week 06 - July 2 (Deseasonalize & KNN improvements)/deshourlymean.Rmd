@@ -1,0 +1,137 @@
+---
+title: "deshourlymean"
+author: "Guilherme Nobre"
+date: "Wednesday, June 17, 2015"
+output: html_document
+---
+This is for the training data (2013):
+```{r}
+View(train[[1]])
+View(train[[2]])
+View(train[[3]])
+data = readRDS("SCBH1.rds") #get the csv data
+
+train = list() #create a list of data frames
+train[[1]] = data[(data$YEAR == 2013),] #get the 2013 data
+train[[2]] = data[(data$YEAR == 2012),] #get the 2013 data
+train[[3]] = data[(data$YEAR == 2008),] #get the 2013 data
+
+for (x in 1:length(train)) #goes through the list of data frames
+  {
+    train[[x]]$MEAN = NA #create new column for the mean value
+    train[[x]]$DES = NA #create new column for the deseasonalized value
+    train[[x]]$st1 = NA #create new column for S(t - 1)
+    train[[x]]$st2 = NA #create new column for S(t - 2)
+
+    train[[x]] = train[[x]][c("MON", "DAY", "YEAR", "HR", "SOLR", "MEAN", "DES", "st1", "st2")] #necessary columns for prediction
+    rownames(train[[x]]) = NULL #remove row names from data frame
+    train[[x]] = train[[x]][(train[[x]]$HR >= 8 & train[[x]]$HR <= 17),]
+  }
+
+test = read.csv("SCBH1-2014.csv") #get the csv data
+test$MEAN = NA #create new column for the mean value
+test$DES = NA #create new column for the deseasonalized value
+test$st1 = NA #create new column for S(t - 1)
+test$st2 = NA #create new column for S(t - 2)
+
+test = test[c("MON", "DAY", "YEAR", "HR", "SOLR", "MEAN", "DES", "st1", "st2")]#necessary columns for prediction
+rownames(test) = NULL #remove row names from data frame
+test = test[(test$HR >= 8 & test$HR <= 17),]
+
+cont = 0;
+#  for loop to generate the mean hourly #
+for (i in 1:nrow(test)) #goes through all the rows of the test data frame
+{
+  data2013 = train[[1]][(train[[1]]$MON == test$MON[i] & train[[1]]$DAY == test$DAY[i] & train[[1]]$HR == test$HR[i]),] #get the respective row from the train2013 data set
+  data2012 = train[[2]][(train[[2]]$MON == test$MON[i] & train[[2]]$DAY == test$DAY[i] & train[[2]]$HR == test$HR[i]),] #get the respective row from the train2012 data set
+  data2008 = train[[3]][(train[[3]]$MON == test$MON[i] & train[[3]]$DAY == test$DAY[i] & train[[3]]$HR == test$HR[i]),] #get the respective row from the train2012 data set
+  if (nrow(data2013) > 0 & nrow(data2012) > 0 & nrow(data2008) > 0 )
+    {
+    test$MEAN[i] = (data2013$SOLR + data2012$SOLR + data2008$SOLR) / 3 #if the row exists (not 0) then sum and divide to get the mean for the hour
+  }else {
+    cont = cont + 1
+    test$MEAN[i] = NA
+  }
+}
+
+# for loop to put the mean value into the train data frame #
+for (x in 1:length(train))
+  {
+    for (i in 1:nrow(train[[x]])) 
+    {
+      data2013 = test[(test$MON == train[[x]]$MON[i] & test$DAY == train[[x]]$DAY[i] & test$HR ==train[[x]]$HR[i]),]
+      if (nrow(data2013) > 0) train[[x]]$MEAN[i] = data2013$MEAN 
+    }
+  }
+
+# for loop to get the deseasonalized value (solar radiance - mean) #
+for (i in 1:nrow(test)) 
+{
+  test$DES[i] = test$SOLR[i] - test$MEAN[i]
+}
+
+for (x in 1:length(train)) 
+  {
+    for (i in 1:nrow(train[[x]])) 
+    {
+      train[[x]]$DES[i] = train[[x]]$SOLR[i] - train[[x]]$MEAN[i]
+    }
+  }
+
+# for loop to get s(t-1) and s(t-2) #train data
+for (x in 1:length(train))
+  {
+    for (i in 2:nrow(train[[x]])) 
+    {
+      train[[x]]$st1[i] = train[[x]]$DES[i-1] #get the hour before deseasonalized solar irradiance
+    }
+    
+    for (i in 3:nrow(train[[x]])) 
+    {
+      train[[x]]$st2[i] = train[[x]]$DES[i-2] #get the two hour before deseasonalized solar irradiance
+    }
+  }
+
+# for loop to get s(t-1) and s(t-2) # test data
+for (i in 2:nrow(test)) 
+{
+  test$st1[i] = test$DES[i-1] #get the hour before solar irradiance
+}
+
+for (i in 3:nrow(test)) 
+{
+  test$st2[i] = test$DES[i-2] #get the two hour before solar irradiance
+}
+
+data = rbind(train[[1]], train[[2]]) #put the two data frames together
+model = lm(DES ~ st1 + st2, data = train[[1]]) #builds the model using the deseasonalized value as the dependent variable. S(t-1) and S(t-2) as the independent variable.
+```
+Then, we get the predictions using the model we just built and the test data.
+```{r}
+test$DESpred = predict(model, test) #get the predctions for the deseasonalized value
+for (i in 1:nrow(test)) 
+{
+  test$pred = test$DESpred + test$MEAN #sums the deseasonalized value with the mean value to get the real prediction
+}
+
+deshourlymean = test
+deshourlymean$error = abs(deshourlymean$SOLR - deshourlymean$pred)
+hist(deshourlymean$error, main="Deseasanoliaisdjsid", xlab="Error")
+boxplot(error~HR,data=deshourlymean, main=paste("Linear Model -", n, "Hours", sep=" "), 
+        xlab="Hour", ylab="Error", ylim=c(0, 900))
+mean(deshourlymean$error)
+
+```
+
+The last step is getting the data in the needed format:
+
+<img src="table1.jpg" />
+```{r}
+test = test[c("YEAR", "MON", "DAY", "HR", "predictions")] #creates a new data frame in the needed format
+rownames(test) = NULL
+colnames(test)[5] <- "SOLR" #change the name of the predictions column to SOLR
+test = test[(test$HR >= 8 & test$HR <= 17),] #from 8am to 5pm
+write.csv(test, file = "deshourlymean.csv",row.names=FALSE) #generate the csv file
+```
+
+The script outputs a csv file named deshourlymeanm2.csv.
