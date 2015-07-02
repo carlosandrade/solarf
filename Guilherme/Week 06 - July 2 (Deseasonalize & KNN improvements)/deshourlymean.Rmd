@@ -6,6 +6,10 @@ output: html_document
 ---
 This is for the training data (2013):
 ```{r}
+n = 1
+m = 1 #1-MEAN
+      #2-MAX
+      #3-MIN
 clean = function(data)
 {
   data$MEAN = NA #create new column for the mean value
@@ -17,10 +21,28 @@ clean = function(data)
   data
 }
 
-n = 1 #1-MEAN
-      #2-MAX
-      #3-MIN
-
+getPast = function(data, n)
+{
+  for (t in (n+1):nrow(data)) 
+  {
+    data$st1[t] = data$DES[t-(n)] #get the n hour before solar irradiance
+  }
+  
+  for (t in (n+2):nrow(data)) 
+  {
+    data$st2[t] = data$DES[t-(n+1)] #get the (n + 1) hour before solar irradiance
+  }
+  data
+}
+getDES = function(data)
+  {
+      for (i in 1:nrow(data)) 
+      {
+        data$DES[i] = data$SOLR[i] - data$MEAN[i]
+      }
+      data
+  }
+##############################################
 data = readRDS("SCBH1.rds") #get the csv data
 train = list() #create a list of data frames
 train[[1]] = data[(data$YEAR == 2013),] #get the 2013 data
@@ -30,13 +52,10 @@ train[[3]] = data[(data$YEAR == 2008),] #get the 2013 data
 train[[1]] = clean(train[[1]])
 train[[2]] = clean(train[[2]])
 train[[3]] = clean(train[[3]])
-
-
+##############################################
 test = data[(data$YEAR == 2014),]
 test = clean(test)
-
-#test = test[(test$HR >= 6 & test$HR <= 17),]
-
+##############################################
 cont = 0;
 #  for loop to generate the mean hourly #
 for (i in 1:nrow(test)) #goes through all the rows of the test data frame
@@ -48,9 +67,9 @@ for (i in 1:nrow(test)) #goes through all the rows of the test data frame
   
   if (nrow(data2013) > 0 & nrow(data2012) > 0 & nrow(data2008) > 0 )
     {
-    if (n == 1) test$MEAN[i] = mean(c(data2013$SOLR, data2012$SOLR, data2008$SOLR), na.rm = TRUE)
-    if (n == 2) test$MEAN[i] = max(data2013$SOLR, data2012$SOLR, data2008$SOLR, na.rm = TRUE)
-    if (n == 3) test$MEAN[i] = min(data2013$SOLR, data2012$SOLR, data2008$SOLR, na.rm = TRUE)
+    if (m == 1) test$MEAN[i] = mean(c(data2013$SOLR, data2012$SOLR, data2008$SOLR), na.rm = TRUE)
+    if (m == 2) test$MEAN[i] = max(data2013$SOLR, data2012$SOLR, data2008$SOLR, na.rm = TRUE)
+    if (m == 3) test$MEAN[i] = min(data2013$SOLR, data2012$SOLR, data2008$SOLR, na.rm = TRUE)
   } 
   else 
   {
@@ -59,7 +78,7 @@ for (i in 1:nrow(test)) #goes through all the rows of the test data frame
   }
   
 }
-
+##############################################
 # for loop to put the mean value into the train data frame #
 for (x in 1:length(train))
   {
@@ -70,45 +89,17 @@ for (x in 1:length(train))
     }
   }
 
-# for loop to get the deseasonalized value (solar radiance - mean) # TEST
-for (i in 1:nrow(test)) 
-{
-  test$DES[i] = test$SOLR[i] - test$MEAN[i]
-}
+#GET des
+train[[1]] = getDES(train[[1]])
+train[[2]] = getDES(train[[2]])
+train[[3]] = getDES(train[[3]])
+test = getDES(test)
 
-# for loop to get the deseasonalized value (solar radiance - mean) # TRAIN
-for (x in 1:length(train)) 
-  {
-    for (i in 1:nrow(train[[x]])) 
-    {
-      train[[x]]$DES[i] = train[[x]]$SOLR[i] - train[[x]]$MEAN[i]
-    }
-  }
-
-# for loop to get s(t-1) and s(t-2) #train data
-for (x in 1:length(train))
-  {
-    for (i in 2:nrow(train[[x]])) 
-    {
-      train[[x]]$st1[i] = train[[x]]$DES[i-1] #get the hour before deseasonalized solar irradiance
-    }
-    
-    for (i in 3:nrow(train[[x]])) 
-    {
-      train[[x]]$st2[i] = train[[x]]$DES[i-2] #get the two hour before deseasonalized solar irradiance
-    }
-  }
-
-# for loop to get s(t-1) and s(t-2) # test data
-for (i in 2:nrow(test)) 
-{
-  test$st1[i] = test$DES[i-1] #get the hour before solar irradiance
-}
-
-for (i in 3:nrow(test)) 
-{
-  test$st2[i] = test$DES[i-2] #get the two hour before solar irradiance
-}
+#get s(t-1) and s(t-2) #train data
+train[[1]] = getPast(train[[1]], n)
+train[[2]] = getPast(train[[2]], n)
+train[[3]] = getPast(train[[3]], n)
+test = getPast(test, n)
 
 data = rbind(train[[1]], train[[2]], train[[3]]) #put the two data frames together
 model = lm(DES ~ st1 + st2, data = data) #builds the model using the deseasonalized value as the dependent variable. S(t-1) and S(t-2) as the independent variable.
@@ -118,6 +109,7 @@ for (i in 1:nrow(test))
 {
   test$pred = test$DESpred + test$MEAN #sums the deseasonalized value with the mean value to get the real prediction
 }
+
 test = test[(test$HR >= 8 & test$HR <= 17),]
 deshourlymean = test
 deshourlymean$error = abs(deshourlymean$SOLR - deshourlymean$pred)

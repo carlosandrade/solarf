@@ -12,6 +12,7 @@ First of all, we read and treat the data to look as the table below:
 This is for the training data (2013):
 
 ```{r}
+n = 1
 #return (test[(count-1),]$SOLR + test[(count+1),]$SOLR) / 2
 interpolation = function(data)
 {
@@ -28,51 +29,43 @@ interpolation = function(data)
   }
   data
 }
-
+clean = function(data)
+{
+  data$st1 = 0 #create new column for S(t - 1)
+  data$st2 = 0 #create new column for S(t - 2)
+  data = data[c("MON", "DAY", "YEAR", "HR", "SOLR", "st1", "st2")] #necessary columns for prediction
+  rownames(data) = NULL #remove row names from data frame
+  data
+}
+getPast = function(data, n)
+{
+  for (t in (n+1):nrow(data)) 
+  {
+    data$st1[t] = data$SOLR[t-(n)] #get the n hour before solar irradiance
+  }
+  
+  for (t in (n+2):nrow(data)) 
+  {
+    data$st2[t] = data$SOLR[t-(n+1)] #get the (n + 1) hour before solar irradiance
+  }
+  data
+}
+####################################################
 data = readRDS("SCBH1.rds") #get the csv data
 train = data[(data$YEAR == 2013),]
 train.SOLR = train$SOLR
-train = train[c("MON", "DAY", "YEAR", "HR", "SOLR")] #necessary columns for prediction
-rownames(train) = NULL #remove row names from data frame
-
-train$st1 = 0 #create new column for S(t - n)
-train$st2 = 0 #create new column for S(t - (n+1))
-
+train = clean(train)
 train = interpolation(train)
-
-
-for (i in 2:nrow(train)) 
-{
-  train$st1[i] = train$SOLR[i-1] #get the hour before solar irradiance
-}
-
-for (i in 3:nrow(train)) 
-{
-  train$st2[i] = train$SOLR[i-2] #get the two hour before solar irradiance
-}
-
+train = getPast(train, n)
 traindata = train[c("st1", "st2")]
 ###################################
 test = data[(data$YEAR == 2014),]
 test.SOLR = test$SOLR
-test = test[c("MON", "DAY", "YEAR", "HR", "SOLR")] #necessary columns for prediction
-rownames(test) = NULL #remove row names from data frame
-
-test$st1 = 0 #create new column for S(t - n)
-test$st2 = 0 #create new column for S(t - (n+1))
-
+test = clean(test)
 test = interpolation(test)
-for (i in 2:nrow(test)) 
-{
-  test$st1[i] = test$SOLR[i-1] #get the hour before solar irradiance
-}
-
-for (i in 3:nrow(test)) 
-{
-  test$st2[i] = test$SOLR[i-2] #get the two hour before solar irradiance
-}
+test = getPast(test, n)
 testdata = test[c("st1", "st2")] #necessary columns for prediction
-
+####################################
 library(FNN)
 
 test.knn <- knn.reg(traindata, test = testdata, y=train.SOLR, k=3);
@@ -80,13 +73,14 @@ test$pred = test.knn$pred
 test$SOLR = test.SOLR
 test = test[(test$HR >= 8 & test$HR <= 17),] #from 8am to 5pm
 
-
+###############################################
 knn = test
 knn$error = abs(knn$SOLR - knn$pred)
 mean(knn$error, na.rm = TRUE)
 hist(knn$error, main = "KNN", ylim=c(0, 900), xlim=c(0, 800), xlab="Error")
 boxplot(error~HR,data=knn, main="KNN", 
         xlab="Hour", ylab="Error", ylim=c(0, 900))
+################################################
 
 knn = knn[c("YEAR", "MON", "DAY", "HR", "pred")]
 colnames(knn)[5] <- "SOLR" #change the name of the predictions column to SOLR
